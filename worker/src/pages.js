@@ -1,7 +1,11 @@
 // Static page bodies for the connector. Every page carries non-affiliation
 // language per docs/hosted-oauth-connector.md and YNAB's naming guidance.
 
-const NON_AFFILIATION = "MCP Server for YNAB is an independent open-source project by Oliver Ames. We are not affiliated, associated, or in any way officially connected with YNAB or any of its subsidiaries or affiliates. The official YNAB website can be found at <a href=\"https://www.ynab.com\">www.ynab.com</a>. The names YNAB and You Need A Budget, as well as related names, tradenames, marks, trademarks, emblems, and images are registered trademarks of YNAB.";
+import { CONNECTOR_ICON_PNG_URL, CONNECTOR_MCP_URL } from "./brand-assets.js";
+
+const FORK_URL = "https://github.com/drewmanole/ynab-mcp-server";
+const UPSTREAM_URL = "https://github.com/oliverames/ynab-mcp-server";
+const NON_AFFILIATION = "This personal deployment of MCP Server for YNAB is based on the independent open-source project by Oliver Ames. We are not affiliated, associated, or in any way officially connected with YNAB or any of its subsidiaries or affiliates. The official YNAB website can be found at <a href=\"https://www.ynab.com\">www.ynab.com</a>. The names YNAB and You Need A Budget, as well as related names, tradenames, marks, trademarks, emblems, and images are registered trademarks of YNAB.";
 
 export function escapeHtml(value) {
   return String(value ?? "")
@@ -24,7 +28,7 @@ function layout(title, body) {
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<meta property="og:image" content="https://ynab.amesvt.com/assets/icon.png">
+<meta property="og:image" content="${CONNECTOR_ICON_PNG_URL}">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1024">
 <meta property="og:image:height" content="1024">
@@ -42,7 +46,7 @@ function layout(title, body) {
 <body>
 <img class="brand" src="/assets/works-with-ynab.svg" width="196" height="78" alt="Works with YNAB">
 ${body}
-<footer>${NON_AFFILIATION}<br>Support: <a href="https://github.com/oliverames/ynab-mcp-server/issues">github.com/oliverames/ynab-mcp-server</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="/delete">Delete my data</a></footer>
+<footer>${NON_AFFILIATION}<br><a href="${FORK_URL}">Personal deployment source</a> &middot; <a href="${UPSTREAM_URL}">Original project</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="/delete">Delete my data</a></footer>
 </body>
 </html>`;
 }
@@ -52,9 +56,9 @@ export function landingPage() {
 <h1><span class="accent">MCP Server for YNAB</span>: remote connector</h1>
 <div class="card">
 <p>This is a remote <a href="https://modelcontextprotocol.io">Model Context Protocol</a> endpoint for YNAB budgets. Add it to an MCP-capable AI client and authorize with your own YNAB account. There is no personal access token to copy anywhere.</p>
-<p><strong>Endpoint:</strong> <code>https://ynab.amesvt.com/mcp</code> (streamable HTTP; legacy SSE at <code>/sse</code>)</p>
+<p><strong>Endpoint:</strong> <code>${CONNECTOR_MCP_URL}</code> (streamable HTTP; legacy SSE at <code>/sse</code>)</p>
 <p>Your AI client will walk you through YNAB's own sign-in and consent. You choose at consent time whether the connection can write to your budget or stay read-only.</p>
-<p class="muted">Source code, tool reference, and the local stdio version: <a href="https://github.com/oliverames/ynab-mcp-server">oliverames/ynab-mcp-server</a>.</p>
+<p class="muted">Personal deployment source: <a href="${FORK_URL}">drewmanole/ynab-mcp-server</a>. Original project, tool reference, and local stdio version: <a href="${UPSTREAM_URL}">oliverames/ynab-mcp-server</a>.</p>
 </div>`);
 }
 
@@ -105,14 +109,14 @@ export function finalConsentPage({ clientName, redirectUri, writesEnabled, purpo
 export function privacyPage() {
   return layout("Privacy | MCP Server for YNAB", `
 <h1>Privacy policy</h1>
-<p class="muted"><strong>Last updated:</strong> July 15, 2026</p>
+<p class="muted"><strong>Last updated:</strong> August 8, 2026</p>
 <div class="card">
 <p><strong>Storage and Cloudflare:</strong> the connector stores your YNAB OAuth access and refresh tokens, YNAB user ID, read-only/write choice, and an undo journal of connector-performed writes (transaction IDs and the changed field values needed to reverse them). Cloudflare hosts the Worker and provides the Durable Objects and Workers KV storage used by the connector. Tokens and undo entries are encrypted with AES-GCM before they are written to Cloudflare KV.</p>
 <p><strong>Retention:</strong> encrypted token records, authorization grants, and undo entries are retained until you use <a href="/delete">the deletion page</a>. Temporary OAuth consent and callback state expires automatically within 10 minutes.</p>
 <p><strong>Data delivery:</strong> when you make an MCP request, the connector exchanges OAuth and budget data with YNAB (including <code>app.ynab.com</code> for sign-in and <code>api.ynab.com</code> for API requests) and returns the result to the MCP client you connected. That client may receive budget data returned by the tool; its handling is governed by its own terms and privacy policy.</p>
 <p><strong>What it does not do:</strong> store your YNAB password, sell your data, use budget data for advertising, or persist ordinary budget results outside the encrypted token and undo records described above.</p>
 <p><strong>Deletion:</strong> use <a href="/delete">the deletion page</a> to revoke this connector's grants and erase stored tokens and journal entries. You can also revoke the application from your YNAB account settings.</p>
-<p><strong>Contact:</strong> file an issue at <a href="https://github.com/oliverames/ynab-mcp-server/issues">github.com/oliverames/ynab-mcp-server</a>.</p>
+<p><strong>Deletion requests:</strong> use <a href="/delete">the deletion page</a>. This personal deployment does not publish a separate support channel.</p>
 </div>`);
 }
 
