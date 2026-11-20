@@ -1,9 +1,15 @@
 # ynab-mcp-connector (worker/)
 
 Cloudflare Worker that hosts the same MCP server as the repo root, remotely at
-**https://ynab.amesvt.com/mcp**, with per-user YNAB OAuth instead of a personal
-access token. Design blueprint: [docs/hosted-oauth-connector.md](../docs/hosted-oauth-connector.md).
+the configured origin at `/mcp`, with per-user
+YNAB OAuth instead of a personal access token. Design blueprint:
+[docs/hosted-oauth-connector.md](../docs/hosted-oauth-connector.md).
 Not affiliated with YNAB.
+
+This directory contains the Worker source maintained in
+[drewmanole/ynab-mcp-server](https://github.com/drewmanole/ynab-mcp-server).
+The original project and attribution remain at
+[oliverames/ynab-mcp-server](https://github.com/oliverames/ynab-mcp-server).
 
 ## How it works
 
@@ -34,19 +40,41 @@ Not affiliated with YNAB.
 
 ```bash
 cd worker
-npm install
-npx wrangler kv namespace create OAUTH_KV     # paste id into wrangler.jsonc
-npx wrangler secret put YNAB_CLIENT_ID        # from the YNAB OAuth application
-npx wrangler secret put YNAB_CLIENT_SECRET
-npx wrangler secret put COOKIE_ENCRYPTION_KEY # any random 32+ byte string
-npx wrangler secret put DATA_ENCRYPTION_KEY   # a different random 32+ byte string
-npx wrangler deploy                           # provisions ynab.amesvt.com DNS + cert
+npm ci --include=optional
+npx wrangler login --use-keyring
+npx wrangler whoami
+npx wrangler kv namespace create OAUTH_KV
 ```
 
+Replace the example namespace ID in `wrangler.jsonc`, set `CONNECTOR_BASE_URL` to
+the exact workers.dev origin, and create the YNAB OAuth application described
+below. Save its credentials and two different random 32+ byte encryption keys
+in a password manager.
+
+For the initial deployment, put all four values in one temporary JSON or `.env`
+file outside the repository, restrict it to the current user, and upload code
+and secrets as a single Worker version:
+
+```bash
+chmod 600 /absolute/path/to/ynab-worker-secrets.env
+npx wrangler deploy --secrets-file /absolute/path/to/ynab-worker-secrets.env --strict
+```
+
+The file must define `YNAB_CLIENT_ID`, `YNAB_CLIENT_SECRET`,
+`COOKIE_ENCRYPTION_KEY`, and `DATA_ENCRYPTION_KEY`. Delete only that temporary
+file after the deployment and production checks succeed. Do not use four
+sequential `wrangler secret put` calls for the initial release: every call can
+create a separately deployed Worker version with only part of the required
+configuration. Losing `DATA_ENCRYPTION_KEY` makes existing encrypted token and
+undo records unreadable.
+
 Prerequisites: a YNAB OAuth application (YNAB → Account Settings → Developer
-Settings) whose redirect URI is exactly `https://ynab.amesvt.com/callback`, and
-wrangler authenticated against the Cloudflare account that owns the amesvt.com
-zone. Local dev: copy `.dev.vars.example` to `.dev.vars` (redirect URI
+Settings) whose name is `MCP Server for YNAB`, website is the exact workers.dev
+origin, privacy URL ends in `/privacy`, and redirect URI is exactly
+`https://connector.example/callback`. Keep default
+plan selection disabled. Wrangler must be authenticated against the Cloudflare
+account whose workers.dev subdomain is used. Local dev: copy `.dev.vars.example`
+to `.dev.vars` (redirect URI
 `http://localhost:8787/callback` must also be registered on the YNAB app while
 testing locally).
 
@@ -57,8 +85,7 @@ before YNAB blocks new authorizations. Removing the limit requires YNAB's
 review, which its current documentation says takes 2 to 4 weeks. This is a
 rollout limit, not a cause of connector consent errors that happen before the
 browser reaches YNAB.
-Do not submit the review form or publish the connector without Oliver's explicit
-approval.
+Directory review and publication are not part of this personal deployment.
 
 ## Connector identity
 
@@ -98,10 +125,10 @@ decision.
 ```bash
 npm test
 npx wrangler deploy --dry-run
-curl -I https://ynab.amesvt.com/
-curl -I https://ynab.amesvt.com/assets/works-with-ynab.png
-curl https://ynab.amesvt.com/.well-known/oauth-protected-resource/mcp
-curl https://ynab.amesvt.com/.well-known/oauth-authorization-server
+curl -I "$CONNECTOR_BASE_URL"/
+curl -I "$CONNECTOR_BASE_URL"/assets/works-with-ynab.png
+curl "$CONNECTOR_BASE_URL"/.well-known/oauth-protected-resource/mcp
+curl "$CONNECTOR_BASE_URL"/.well-known/oauth-authorization-server
 ```
 
 The unit suite is credential-free. Production acceptance passed on July 15,

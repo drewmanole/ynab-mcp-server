@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  CONNECTOR_MCP_URL,
+  connectorOrigin,
   CONNECTOR_FAVICON_16_PNG_SHA256,
   CONNECTOR_FAVICON_32_PNG_SHA256,
   CONNECTOR_FAVICON_48_PNG_SHA256,
@@ -16,8 +16,8 @@ import {
   CONNECTOR_FAVICON_ICO_SHA256,
   CONNECTOR_FAVICON_SVG_SHA256,
   CONNECTOR_ICON_PNG_SHA256,
-  CONNECTOR_RESOURCE_METADATA,
-  REMOTE_SERVER_INFO,
+  resourceMetadata,
+  remoteServerInfo,
   WORKS_WITH_YNAB_PNG_SHA256,
   WORKS_WITH_YNAB_SOURCE_URL,
   WORKS_WITH_YNAB_SVG_SHA256,
@@ -41,6 +41,11 @@ import {
   tokenRecordKey,
   undoJournalKey,
 } from "../src/ynab-oauth.js";
+
+const CONNECTOR_ORIGIN = "https://connector.example";
+const CONNECTOR_MCP_URL = CONNECTOR_ORIGIN + "/mcp";
+const CONNECTOR_RESOURCE_METADATA = resourceMetadata(CONNECTOR_ORIGIN);
+const REMOTE_SERVER_INFO = remoteServerInfo(CONNECTOR_ORIGIN);
 
 const DATA_KEY = "test-only-data-encryption-key-with-enough-entropy";
 const COOKIE_KEY = "test-only-cookie-signing-key-with-enough-entropy";
@@ -132,21 +137,21 @@ test("hosted connector uses the exact Codex plugin icon and conventional favicon
   assert.equal(WORKS_WITH_YNAB_SOURCE_URL, "https://api.ynab.com/papi/works_with_ynab.svg");
   assert.deepEqual(CONNECTOR_RESOURCE_METADATA, {
     resource: CONNECTOR_MCP_URL,
-    authorization_servers: ["https://ynab.amesvt.com"],
+    authorization_servers: [CONNECTOR_ORIGIN],
     scopes_supported: ["read", "write"],
     bearer_methods_supported: ["header"],
-    resource_name: "YNAB",
+    resource_name: "MCP Server for YNAB",
   });
-  assert.equal(REMOTE_SERVER_INFO.name, "YNAB");
-  assert.equal(REMOTE_SERVER_INFO.title, "YNAB");
+  assert.equal(REMOTE_SERVER_INFO.name, "mcp-server-for-ynab");
+  assert.equal(REMOTE_SERVER_INFO.title, "MCP Server for YNAB");
   assert.deepEqual(REMOTE_SERVER_INFO.icons, [
     {
-      src: "https://ynab.amesvt.com/assets/ynab-tree-icon-v1.png",
+      src: `${CONNECTOR_ORIGIN}/assets/ynab-tree-icon-v1.png`,
       mimeType: "image/png",
       sizes: ["256x256"],
     },
     {
-      src: "https://ynab.amesvt.com/assets/icon.png",
+      src: `${CONNECTOR_ORIGIN}/assets/icon.png`,
       mimeType: "image/png",
       sizes: ["1024x1024"],
     },
@@ -169,7 +174,7 @@ test("hosted connector uses the exact Codex plugin icon and conventional favicon
     ["/assets/ynab-tree-icon-v1.png", "image/png", CONNECTOR_FAVICON_256_PNG_SHA256],
   ];
   for (const [path, contentType, expectedSha256] of assets) {
-    const response = await YnabHandler.request(`https://ynab.amesvt.com${path}`);
+    const response = await YnabHandler.request(`${CONNECTOR_ORIGIN}${path}`);
     assert.equal(response.status, 200);
     assert.match(response.headers.get("content-type") ?? "", new RegExp(`^${contentType.replace("+", "\\+")}(?:;|$)`));
     assert.equal(
@@ -185,12 +190,35 @@ test("hosted connector uses the exact Codex plugin icon and conventional favicon
     const body = Buffer.from(await response.arrayBuffer());
     assert.equal(createHash("sha256").update(body).digest("hex"), expectedSha256);
 
-    const conditional = await YnabHandler.request(`https://ynab.amesvt.com${path}`, {
+    const conditional = await YnabHandler.request(`${CONNECTOR_ORIGIN}${path}`, {
       headers: { "If-None-Match": response.headers.get("etag") },
     });
     assert.equal(conditional.status, 304);
     assert.equal((await conditional.arrayBuffer()).byteLength, 0);
   }
+});
+
+test("personal deployment surfaces use one origin and exclude the upstream hostname", async () => {
+  const files = await Promise.all([
+    "../wrangler.jsonc",
+    "../src/brand-assets.js",
+    "../src/pages.js",
+    "../README.md",
+    "../package.json",
+  ].map(async (path) => [path, await readFile(new URL(path, import.meta.url), "utf8")]));
+
+  for (const [path, contents] of files) {
+    assert.equal(
+      contents.includes("ynab.amesvt.com"),
+      false,
+      `${path} must not retain the upstream deployment hostname`,
+    );
+  }
+
+  const origin = connectorOrigin({ CONNECTOR_BASE_URL: "https://second.example" });
+  assert.equal(resourceMetadata(origin).resource, "https://second.example/mcp");
+  assert.equal(remoteServerInfo(origin).websiteUrl, "https://second.example");
+  assert.throws(() => connectorOrigin({}), /CONNECTOR_BASE_URL/);
 });
 
 test("favicon.ico stays small enough for icon resolvers", () => {
@@ -205,7 +233,7 @@ test("favicon.ico stays small enough for icon resolvers", () => {
 });
 
 test("landing page advertises the connector icon", async () => {
-  const response = await YnabHandler.request("https://ynab.amesvt.com/");
+  const response = await YnabHandler.request(`${CONNECTOR_ORIGIN}/`, {}, { CONNECTOR_BASE_URL: CONNECTOR_ORIGIN });
   const body = await response.text();
   // The square tree favicon leads, with a small ICO as the alternate. Icon
   // resolvers take the first usable declaration, so nothing large or ambiguous
@@ -217,16 +245,19 @@ test("landing page advertises the connector icon", async () => {
   // The "Works with YNAB" wordmark is 196x78 and must never be advertised as a
   // favicon; only the square tree artwork may be.
   assert.doesNotMatch(body, /rel="[^"]*icon"[^>]+works-with-ynab/);
-  assert.match(body, /<meta property="og:image" content="https:\/\/ynab\.amesvt\.com\/assets\/icon\.png">/);
+  assert.ok(body.includes(`<meta property="og:image" content="${CONNECTOR_ORIGIN}/assets/icon.png">`));
   assert.match(body, /<meta property="og:image:width" content="1024">/);
   assert.match(body, /<meta property="og:image:height" content="1024">/);
   assert.match(body, /<img class="brand" src="\/assets\/works-with-ynab\.svg"/);
+  assert.match(body, /github\.com\/drewmanole\/ynab-mcp-server/);
+  assert.match(body, /github\.com\/oliverames\/ynab-mcp-server/);
+  assert.doesNotMatch(body, /ynab-mcp-server\/issues/);
   assert.match(response.headers.get("content-security-policy") ?? "", /img-src 'self'/);
   assert.equal(response.headers.get("referrer-policy"), "same-origin");
 });
 
 test("HTML CSP defaults forms to the connector origin", async () => {
-  const response = await YnabHandler.request("https://ynab.amesvt.com/");
+  const response = await YnabHandler.request(`${CONNECTOR_ORIGIN}/`, {}, { CONNECTOR_BASE_URL: CONNECTOR_ORIGIN });
   const policy = response.headers.get("content-security-policy") ?? "";
 
   assert.match(policy, /form-action 'self'(?:;|$)/);
@@ -234,28 +265,28 @@ test("HTML CSP defaults forms to the connector origin", async () => {
 
 test("MCP endpoints reject untrusted browser origins before OAuth", async () => {
   const env = {
-    CONNECTOR_BASE_URL: "https://ynab.amesvt.com",
+    CONNECTOR_BASE_URL: CONNECTOR_ORIGIN,
     MCP_ALLOWED_ORIGINS: "https://chatgpt.com, https://claude.ai",
   };
 
   assert.deepEqual(
     allowedMcpOrigins(env),
-    new Set(["https://ynab.amesvt.com", "https://chatgpt.com", "https://claude.ai"])
+    new Set([CONNECTOR_ORIGIN, "https://chatgpt.com", "https://claude.ai"])
   );
   assert.equal(
-    rejectUntrustedMcpOrigin(new Request("https://ynab.amesvt.com/mcp"), env),
+    rejectUntrustedMcpOrigin(new Request(`${CONNECTOR_ORIGIN}/mcp`), env),
     null
   );
   assert.equal(
-    rejectUntrustedMcpOrigin(new Request("https://ynab.amesvt.com/mcp", {
+    rejectUntrustedMcpOrigin(new Request(`${CONNECTOR_ORIGIN}/mcp`, {
       headers: { Origin: "https://chatgpt.com" },
     }), env), null);
   assert.equal(
-    rejectUntrustedMcpOrigin(new Request("https://ynab.amesvt.com/privacy", {
+    rejectUntrustedMcpOrigin(new Request(`${CONNECTOR_ORIGIN}/privacy`, {
       headers: { Origin: "https://example.invalid" },
     }), env), null);
 
-  const response = rejectUntrustedMcpOrigin(new Request("https://ynab.amesvt.com/mcp", {
+  const response = rejectUntrustedMcpOrigin(new Request(`${CONNECTOR_ORIGIN}/mcp`, {
     method: "POST",
     headers: { Origin: "https://example.invalid" },
   }), env);
@@ -270,24 +301,27 @@ test("MCP endpoints reject untrusted browser origins before OAuth", async () => 
 });
 
 test("HTTPS responses carry hostname-scoped HSTS", async () => {
-  const secureRequest = new Request("https://ynab.amesvt.com/privacy");
+  const secureRequest = new Request(`${CONNECTOR_ORIGIN}/privacy`);
   const secureResponse = applyTransportSecurityHeaders(secureRequest, new Response("ok"));
   assert.equal(secureResponse.headers.get("strict-transport-security"), "max-age=31536000");
   assert.equal(await secureResponse.text(), "ok");
 
-  const insecureRequest = new Request("http://ynab.amesvt.com/privacy");
+  const insecureRequest = new Request(`${CONNECTOR_ORIGIN.replace(/^https:/, "http:")}/privacy`);
   const insecureResponse = applyTransportSecurityHeaders(insecureRequest, new Response("ok"));
   assert.equal(insecureResponse.headers.get("strict-transport-security"), null);
 });
 
 test("privacy policy states current retention, hosting, and client delivery", () => {
-  const html = privacyPage();
+  const html = privacyPage(CONNECTOR_ORIGIN);
 
-  assert.match(html, /Last updated:<\/strong> July 15, 2026/);
+  assert.match(html, /Last updated:<\/strong> August 8, 2026/);
   assert.match(html, /Cloudflare hosts the Worker/);
   assert.match(html, /retained until you use/);
   assert.match(html, /expires automatically within 10 minutes/);
   assert.match(html, /returns the result to the MCP client you connected/);
+  assert.match(html, /does not publish a separate support channel/);
+  assert.match(html, /href="\/delete"/);
+  assert.doesNotMatch(html, /ynab-mcp-server\/issues/);
   assert.doesNotMatch(html, /send data to any host other than/);
 });
 
@@ -317,7 +351,7 @@ test("MCP initialization exposes the connector name and icons", async () => {
 });
 
 test("consent and error pages escape untrusted content", () => {
-  const html = consentPage({
+  const html = consentPage(CONNECTOR_ORIGIN, {
     clientName: '<img src=x onerror="alert(1)">',
     redirectUri: 'https://client.example/callback?x="><script>alert(2)</script>',
     consentId: 'request"><script>alert(3)</script>',
@@ -327,9 +361,9 @@ test("consent and error pages escape untrusted content", () => {
   assert.doesNotMatch(html, /<script>alert/);
   assert.doesNotMatch(html, /<img src=x/);
   assert.match(html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
-  assert.doesNotMatch(errorPage('<script>alert("error")</script>'), /<script>alert/);
+  assert.doesNotMatch(errorPage(CONNECTOR_ORIGIN, '<script>alert("error")</script>'), /<script>alert/);
 
-  const finalHtml = finalConsentPage({
+  const finalHtml = finalConsentPage(CONNECTOR_ORIGIN, {
     clientName: '<img src=x onerror="alert(5)">',
     redirectUri: 'https://client.example/"><script>alert(6)</script>',
     writesEnabled: true,
@@ -344,7 +378,7 @@ test("consent and error pages escape untrusted content", () => {
 test("authorize URL uses YNAB PKCE S256 and minimum read-only scope", () => {
   const url = new URL(buildYnabAuthorizeUrl({
     clientId: "client-id",
-    redirectUri: "https://ynab.amesvt.com/callback",
+    redirectUri: `${CONNECTOR_ORIGIN}/callback`,
     state: "state",
     codeChallenge: "challenge",
     readOnly: true,
@@ -532,11 +566,11 @@ test("consent request is opaque, single-use, and redirects to YNAB", async () =>
     state: "client-state",
     codeChallenge: "client-pkce",
     codeChallengeMethod: "S256",
-    resource: "https://ynab.amesvt.com/mcp",
+    resource: CONNECTOR_MCP_URL,
   };
   const env = {
     COOKIE_ENCRYPTION_KEY: COOKIE_KEY,
-    CONNECTOR_BASE_URL: "https://ynab.amesvt.com",
+    CONNECTOR_BASE_URL: CONNECTOR_ORIGIN,
     YNAB_CLIENT_ID: "ynab-client-id",
     OAUTH_KV: kv,
     OAUTH_STATE: transient,
@@ -578,7 +612,7 @@ test("consent request is opaque, single-use, and redirects to YNAB", async () =>
   assert.equal(location.origin, "https://app.ynab.com");
   assert.equal(location.searchParams.get("scope"), "read-only");
   assert.equal(location.searchParams.get("code_challenge_method"), "S256");
-  assert.equal(location.searchParams.get("redirect_uri"), "https://ynab.amesvt.com/callback");
+  assert.equal(location.searchParams.get("redirect_uri"), `${CONNECTOR_ORIGIN}/callback`);
   assert.equal(transient.records.has(`consent:${consentId}`), false);
 
   const replay = await YnabHandler.request("https://untrusted-preview.example/authorize", {
@@ -595,7 +629,7 @@ test("server-side consent tokens reject tamper and cross-consent without cookies
   let requestNumber = 0;
   const env = {
     COOKIE_ENCRYPTION_KEY: COOKIE_KEY,
-    CONNECTOR_BASE_URL: "https://ynab.amesvt.com",
+    CONNECTOR_BASE_URL: CONNECTOR_ORIGIN,
     YNAB_CLIENT_ID: "ynab-client-id",
     OAUTH_KV: kv,
     OAUTH_STATE: new MemoryTransientNamespace(),
@@ -672,7 +706,7 @@ test("authorization forms require the configured same origin without consuming c
   const state = new MemoryTransientNamespace();
   const env = {
     COOKIE_ENCRYPTION_KEY: COOKIE_KEY,
-    CONNECTOR_BASE_URL: "https://ynab.amesvt.com",
+    CONNECTOR_BASE_URL: CONNECTOR_ORIGIN,
     YNAB_CLIENT_ID: "ynab-client-id",
     OAUTH_KV: kv,
     OAUTH_STATE: state,
@@ -759,7 +793,7 @@ test("atomic transient state allows only one concurrent consent and callback", a
   const state = new MemoryTransientNamespace();
   const env = {
     COOKIE_ENCRYPTION_KEY: COOKIE_KEY,
-    CONNECTOR_BASE_URL: "https://ynab.amesvt.com",
+    CONNECTOR_BASE_URL: CONNECTOR_ORIGIN,
     YNAB_CLIENT_ID: "ynab-client-id",
     OAUTH_KV: kv,
     OAUTH_STATE: state,
@@ -812,7 +846,7 @@ test("YNAB callback requires a final same-origin confirmation before creating a 
   const env = {
     COOKIE_ENCRYPTION_KEY: COOKIE_KEY,
     DATA_ENCRYPTION_KEY: DATA_KEY,
-    CONNECTOR_BASE_URL: "https://ynab.amesvt.com",
+    CONNECTOR_BASE_URL: CONNECTOR_ORIGIN,
     YNAB_CLIENT_ID: "ynab-client-id",
     YNAB_CLIENT_SECRET: "ynab-client-secret",
     OAUTH_KV: kv,
@@ -968,7 +1002,7 @@ test("overlapping YNAB approvals validate cookie-free state and reject replay", 
   let requestNumber = 0;
   const env = {
     COOKIE_ENCRYPTION_KEY: COOKIE_KEY,
-    CONNECTOR_BASE_URL: "https://ynab.amesvt.com",
+    CONNECTOR_BASE_URL: CONNECTOR_ORIGIN,
     YNAB_CLIENT_ID: "ynab-client-id",
     OAUTH_KV: kv,
     OAUTH_STATE: new MemoryTransientNamespace(),
