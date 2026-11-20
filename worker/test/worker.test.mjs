@@ -4,8 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  CONNECTOR_ORIGIN,
-  CONNECTOR_MCP_URL,
+  connectorOrigin,
   CONNECTOR_FAVICON_16_PNG_SHA256,
   CONNECTOR_FAVICON_32_PNG_SHA256,
   CONNECTOR_FAVICON_48_PNG_SHA256,
@@ -17,8 +16,8 @@ import {
   CONNECTOR_FAVICON_ICO_SHA256,
   CONNECTOR_FAVICON_SVG_SHA256,
   CONNECTOR_ICON_PNG_SHA256,
-  CONNECTOR_RESOURCE_METADATA,
-  REMOTE_SERVER_INFO,
+  resourceMetadata,
+  remoteServerInfo,
   WORKS_WITH_YNAB_PNG_SHA256,
   WORKS_WITH_YNAB_SOURCE_URL,
   WORKS_WITH_YNAB_SVG_SHA256,
@@ -42,6 +41,11 @@ import {
   tokenRecordKey,
   undoJournalKey,
 } from "../src/ynab-oauth.js";
+
+const CONNECTOR_ORIGIN = "https://connector.example";
+const CONNECTOR_MCP_URL = CONNECTOR_ORIGIN + "/mcp";
+const CONNECTOR_RESOURCE_METADATA = resourceMetadata(CONNECTOR_ORIGIN);
+const REMOTE_SERVER_INFO = remoteServerInfo(CONNECTOR_ORIGIN);
 
 const DATA_KEY = "test-only-data-encryption-key-with-enough-entropy";
 const COOKIE_KEY = "test-only-cookie-signing-key-with-enough-entropy";
@@ -211,11 +215,10 @@ test("personal deployment surfaces use one origin and exclude the upstream hostn
     );
   }
 
-  const wrangler = files.find(([path]) => path === "../wrangler.jsonc")[1];
-  const readme = files.find(([path]) => path === "../README.md")[1];
-  assert.ok(wrangler.includes(`"CONNECTOR_BASE_URL": "${CONNECTOR_ORIGIN}"`));
-  assert.ok(readme.includes(CONNECTOR_MCP_URL));
-  assert.equal(CONNECTOR_MCP_URL, `${CONNECTOR_ORIGIN}/mcp`);
+  const origin = connectorOrigin({ CONNECTOR_BASE_URL: "https://second.example" });
+  assert.equal(resourceMetadata(origin).resource, "https://second.example/mcp");
+  assert.equal(remoteServerInfo(origin).websiteUrl, "https://second.example");
+  assert.throws(() => connectorOrigin({}), /CONNECTOR_BASE_URL/);
 });
 
 test("favicon.ico stays small enough for icon resolvers", () => {
@@ -230,7 +233,7 @@ test("favicon.ico stays small enough for icon resolvers", () => {
 });
 
 test("landing page advertises the connector icon", async () => {
-  const response = await YnabHandler.request(`${CONNECTOR_ORIGIN}/`);
+  const response = await YnabHandler.request(`${CONNECTOR_ORIGIN}/`, {}, { CONNECTOR_BASE_URL: CONNECTOR_ORIGIN });
   const body = await response.text();
   // The square tree favicon leads, with a small ICO as the alternate. Icon
   // resolvers take the first usable declaration, so nothing large or ambiguous
@@ -254,7 +257,7 @@ test("landing page advertises the connector icon", async () => {
 });
 
 test("HTML CSP defaults forms to the connector origin", async () => {
-  const response = await YnabHandler.request(`${CONNECTOR_ORIGIN}/`);
+  const response = await YnabHandler.request(`${CONNECTOR_ORIGIN}/`, {}, { CONNECTOR_BASE_URL: CONNECTOR_ORIGIN });
   const policy = response.headers.get("content-security-policy") ?? "";
 
   assert.match(policy, /form-action 'self'(?:;|$)/);
@@ -309,7 +312,7 @@ test("HTTPS responses carry hostname-scoped HSTS", async () => {
 });
 
 test("privacy policy states current retention, hosting, and client delivery", () => {
-  const html = privacyPage();
+  const html = privacyPage(CONNECTOR_ORIGIN);
 
   assert.match(html, /Last updated:<\/strong> August 8, 2026/);
   assert.match(html, /Cloudflare hosts the Worker/);
@@ -348,7 +351,7 @@ test("MCP initialization exposes the connector name and icons", async () => {
 });
 
 test("consent and error pages escape untrusted content", () => {
-  const html = consentPage({
+  const html = consentPage(CONNECTOR_ORIGIN, {
     clientName: '<img src=x onerror="alert(1)">',
     redirectUri: 'https://client.example/callback?x="><script>alert(2)</script>',
     consentId: 'request"><script>alert(3)</script>',
@@ -358,9 +361,9 @@ test("consent and error pages escape untrusted content", () => {
   assert.doesNotMatch(html, /<script>alert/);
   assert.doesNotMatch(html, /<img src=x/);
   assert.match(html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
-  assert.doesNotMatch(errorPage('<script>alert("error")</script>'), /<script>alert/);
+  assert.doesNotMatch(errorPage(CONNECTOR_ORIGIN, '<script>alert("error")</script>'), /<script>alert/);
 
-  const finalHtml = finalConsentPage({
+  const finalHtml = finalConsentPage(CONNECTOR_ORIGIN, {
     clientName: '<img src=x onerror="alert(5)">',
     redirectUri: 'https://client.example/"><script>alert(6)</script>',
     writesEnabled: true,

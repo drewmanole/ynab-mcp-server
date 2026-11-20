@@ -1,12 +1,12 @@
 # ynab-mcp-connector (worker/)
 
 Cloudflare Worker that hosts the same MCP server as the repo root, remotely at
-`CONNECTOR_BASE_URL/mcp`, with per-user
+the configured origin at `/mcp`, with per-user
 YNAB OAuth instead of a personal access token. Design blueprint:
 [docs/hosted-oauth-connector.md](../docs/hosted-oauth-connector.md).
 Not affiliated with YNAB.
 
-This directory is configured for the personal deployment maintained in
+This directory contains the Worker source maintained in
 [drewmanole/ynab-mcp-server](https://github.com/drewmanole/ynab-mcp-server).
 The original project and attribution remain at
 [oliverames/ynab-mcp-server](https://github.com/oliverames/ynab-mcp-server).
@@ -38,8 +38,6 @@ The original project and attribution remain at
 
 ## Deploy
 
-The hostname `connector.example` is an example. Supply your own connector origin before you deploy.
-
 ```bash
 cd worker
 npm ci --include=optional
@@ -48,7 +46,7 @@ npx wrangler whoami
 npx wrangler kv namespace create OAUTH_KV
 ```
 
-Paste the new namespace id into `wrangler.jsonc`, set `CONNECTOR_BASE_URL` to
+Replace the example namespace ID in `wrangler.jsonc`, set `CONNECTOR_BASE_URL` to
 the exact workers.dev origin, and create the YNAB OAuth application described
 below. Save its credentials and two different random 32+ byte encryption keys
 in a password manager.
@@ -127,10 +125,10 @@ decision.
 ```bash
 npm test
 npx wrangler deploy --dry-run
-curl -I https://connector.example/
-curl -I https://connector.example/assets/works-with-ynab.png
-curl https://connector.example/.well-known/oauth-protected-resource/mcp
-curl https://connector.example/.well-known/oauth-authorization-server
+curl -I "$CONNECTOR_BASE_URL"/
+curl -I "$CONNECTOR_BASE_URL"/assets/works-with-ynab.png
+curl "$CONNECTOR_BASE_URL"/.well-known/oauth-protected-resource/mcp
+curl "$CONNECTOR_BASE_URL"/.well-known/oauth-authorization-server
 ```
 
 The unit suite is credential-free. Production acceptance passed on July 15,

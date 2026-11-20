@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mcp-for-ynab",
   "main": "src/index.js",
-  // Personal deployment on the account's workers.dev subdomain.
+  // Use the configured Worker hostname.
   "workers_dev": true,
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
@@ -10,7 +10,7 @@
     // OAuthProvider grant/client/token storage (props encrypted; tokens hashed),
     // plus this connector's encrypted YNAB token records and undo journals.
     // Personal OAuth and encrypted YNAB token storage for this deployment.
-    { "binding": "OAUTH_KV", "id": "ac81a8bd672147138da230dd7eda4b73" }
+    { "binding": "OAUTH_KV", "id": "00000000000000000000000000000000" }
   ],
   "durable_objects": {
     "bindings": [
@@ -25,7 +25,7 @@
   ],
   "vars": {
     // Never let the shared stdio module autostart or read local config in the Worker.
-    "CONNECTOR_BASE_URL": "https://connector.example",
+    "CONNECTOR_BASE_URL": "http://localhost:8787",
     // Explicit browser origins allowed to call the MCP transport. Native and
     // server-to-server clients omit Origin and remain supported.
     "MCP_ALLOWED_ORIGINS": "https://chatgpt.com,https://claude.ai,https://chat.mistral.ai,https://lechat.mistral.ai",

@@ -2,7 +2,7 @@
   "name": "ynab-mcp-connector",
   "private": true,
   "version": "0.1.0",
-  "description": "Personal hosted OAuth MCP connector for YNAB at connector.example. Not affiliated with YNAB.",
+  "description": "Hosted OAuth MCP connector for YNAB. Not affiliated with YNAB.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
